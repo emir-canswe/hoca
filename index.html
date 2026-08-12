@@ -1188,90 +1188,363 @@
                 return;
             }
 
-            const text = parsedPdfText.replace(/\s+/g, ' '); // Normalize spaces
+            // Keep original text AND a normalized version
+            const rawText = parsedPdfText;
+            const text = rawText.replace(/\s+/g, ' ').trim();
             let filledCount = 0;
 
             function setVal(fieldId, value) {
+                if (value === null || value === undefined || String(value).trim() === '') return;
                 const el = document.getElementById(fieldId);
-                if(el && !el.value && value !== null && value !== undefined) {
-                    el.value = value;
-                    el.classList.add('auto-filled');
-                    setTimeout(() => el.classList.remove('auto-filled'), 3000);
-                    filledCount++;
+                if (!el) return;
+                // Only fill if field is currently empty
+                if (el.value && el.value.trim() !== '') return;
+                el.value = String(value).trim();
+                el.classList.add('auto-filled');
+                setTimeout(() => el.classList.remove('auto-filled'), 5000);
+                filledCount++;
+            }
+
+            // ===== HELPER: Find value after a label =====
+            // Searches for label, then grabs what comes after it (up to 50 chars gap)
+            function findAfterLabel(labelPatterns, valuePattern) {
+                for (const lbl of labelPatterns) {
+                    // Try with colon separator first (most structured docs use "Label : Value")
+                    const colonRegex = new RegExp(lbl + '\\s*[:\\-]?\\s*[:\\.]?\\s*(' + valuePattern + ')', 'i');
+                    const m = text.match(colonRegex);
+                    if (m) return m[1].trim();
+                    
+                    // Try with generous gap
+                    const gapRegex = new RegExp(lbl + '.{0,40}?(' + valuePattern + ')', 'i');
+                    const m2 = text.match(gapRegex);
+                    if (m2) return m2[1].trim();
+                }
+                return null;
+            }
+
+            // ===== LINE-BASED PARSING (most reliable for structured docs) =====
+            // Split into lines and look for "Key : Value" or "Key Value" patterns
+            const lines = rawText.split(/\n/);
+            const lineMap = {}; // key -> value mapping from lines
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                // Match patterns like "TC Kimlik No : 10789481570" or "TC Kimlik No  10789481570"
+                const kvMatch = trimmed.match(/^(.+?)\s*[:\-]\s+(.+)$/);
+                if (kvMatch) {
+                    const key = kvMatch[1].trim().toLowerCase();
+                    const val = kvMatch[2].trim();
+                    lineMap[key] = val;
                 }
             }
 
-            // Rules
-            
-            // TC Kimlik
-            const tcMatch = text.match(/(?:TC|TCKN|T\.C\.|Kimlik).{0,10}(\d{11})/i);
-            if(tcMatch) setVal('f1', tcMatch[1]);
-
-            // Yaş
-            const yasMatch = text.match(/(?:Yaş|yaş|Y:)\s*(\d{1,3})/i);
-            if(yasMatch) setVal('f2', yasMatch[1]);
-
-            // Cinsiyet
-            if(/Erkek/i.test(text)) setVal('f3', '1');
-            else if(/Kadın/i.test(text)) setVal('f3', '2');
-
-            // Tarih
-            const tarihMatch = text.match(/(\d{2})[\/\.-](\d{2})[\/\.-](\d{4})/);
-            if(tarihMatch) setVal('f4', `${tarihMatch[1]}.${tarihMatch[2]}.${tarihMatch[3]}`);
-
-            // Kan Basıncı (TA)
-            const taMatch = text.match(/(?:TA|Kan Basıncı|Sistolik).{0,10}(\d{2,3})\s*[\/\\-]\s*(\d{2,3})/i);
-            if(taMatch) {
-                setVal('f35', taMatch[1]);
-                setVal('f36', taMatch[2]);
+            // Try to extract from line-based parsing first, then regex fallback
+            function getFromLines(keys) {
+                for (const key of keys) {
+                    const k = key.toLowerCase();
+                    for (const [lineKey, lineVal] of Object.entries(lineMap)) {
+                        if (lineKey.includes(k) || k.includes(lineKey)) {
+                            return lineVal;
+                        }
+                    }
+                }
+                return null;
             }
 
-            // SpO2
-            const spo2Match = text.match(/(?:SpO2|Saturasyon|Oksijen).{0,10}%?\s*(\d{2,3})/i);
-            if(spo2Match) setVal('f38', spo2Match[1]);
+            // ===== 1. TC KİMLİK NO =====
+            let tc = getFromLines(['tc kimlik', 'tckn', 't.c. kimlik']);
+            if (tc) {
+                // Extract just the 11-digit number from the value
+                const tcDigits = tc.match(/(\d{11})/);
+                if (tcDigits) tc = tcDigits[1];
+            }
+            if (!tc) {
+                // Fallback: broader regex on full text
+                const tcPatterns = [
+                    /(?:TC\s*Kimlik\s*(?:No|Numaras[ıi]))\s*[:\-]?\s*(\d{11})/i,
+                    /(?:TCKN|T\.?C\.?)\s*[:\-]?\s*.{0,20}?(\d{11})/i,
+                    /(?:Kimlik\s*No)\s*[:\-]?\s*(\d{11})/i,
+                ];
+                for (const p of tcPatterns) {
+                    const m = text.match(p);
+                    if (m) { tc = m[1]; break; }
+                }
+            }
+            if (!tc) {
+                // Last resort: find any standalone 11-digit number (likely TC)
+                const allNums = text.match(/\b(\d{11})\b/g);
+                if (allNums && allNums.length === 1) tc = allNums[0];
+            }
+            if (tc) setVal('f1', tc);
 
-            // Nabız
-            const nabizMatch = text.match(/(?:Nabız|Kalp Hızı|KH|Nab).{0,10}(\d{2,3})/i);
-            if(nabizMatch) setVal('f39', nabizMatch[1]);
+            // ===== 2. YAŞ =====
+            let yas = findAfterLabel(['Yaş', 'YAŞ', 'Yaşı'], '\\d{1,3}');
+            if (!yas) {
+                // Calculate from Doğum Tarihi if available
+                let dogumTarihi = getFromLines(['doğum tarihi', 'dogum tarihi', 'd.tarihi']);
+                if (!dogumTarihi) {
+                    const dtMatch = text.match(/(?:Doğum\s*Tarihi|D\.?\s*Tarihi)\s*[:\-]?\s*(\d{2}[\.\/-]\d{2}[\.\/-]\d{4})/i);
+                    if (dtMatch) dogumTarihi = dtMatch[1];
+                }
+                if (dogumTarihi) {
+                    const parts = dogumTarihi.match(/(\d{2})[\.\/-](\d{2})[\.\/-](\d{4})/);
+                    if (parts) {
+                        const birthDate = new Date(parseInt(parts[3]), parseInt(parts[2]) - 1, parseInt(parts[1]));
+                        const now = new Date();
+                        let age = now.getFullYear() - birthDate.getFullYear();
+                        if (now.getMonth() < birthDate.getMonth() || 
+                            (now.getMonth() === birthDate.getMonth() && now.getDate() < birthDate.getDate())) {
+                            age--;
+                        }
+                        if (age > 0 && age < 150) yas = String(age);
+                    }
+                }
+            }
+            if (yas) setVal('f2', yas);
 
-            // Ateş
-            const atesMatch = text.match(/(?:Ateş|Isı|Vücut Isısı|T:).{0,10}(\d{2}[,\.]\d{1}|\d{2})/i);
-            if(atesMatch) setVal('f41', atesMatch[1].replace(',', '.'));
+            // ===== 3. CİNSİYET =====
+            if (/\b(?:Erkek|ERKEK|erkek|Bay)\b/.test(text)) setVal('f3', '1');
+            else if (/\b(?:Kadın|KADIN|kadın|Bayan)\b/.test(text)) setVal('f3', '2');
 
-            // GKS
-            const gksMatch = text.match(/(?:GKS|GCS|Glasgow).{0,10}(\d{1,2})/i);
-            if(gksMatch) setVal('f43', gksMatch[1]);
+            // ===== 4. TARİH (Sevk Tarihi / Başvuru Tarihi) =====
+            let tarih = getFromLines(['sevk tarihi', 'başvuru tarihi', 'transfer tarihi']);
+            if (!tarih) {
+                const tarihMatch = text.match(/(?:Sevk|Başvuru|Transfer|Kabul)\s*(?:Tarihi)?\s*[:\-]?\s*(\d{2}[\.\/-]\d{2}[\.\/-]\d{4})/i);
+                if (tarihMatch) tarih = tarihMatch[1];
+            }
+            if (!tarih) {
+                // Any date in the text
+                const anyDate = text.match(/(\d{2})[\.\/-](\d{2})[\.\/-](\d{4})/);
+                if (anyDate) tarih = `${anyDate[1]}.${anyDate[2]}.${anyDate[3]}`;
+            }
+            if (tarih) {
+                tarih = tarih.replace(/[\/-]/g, '.');
+                setVal('f4', tarih);
+            }
 
-            // Hemoglobin
-            const hbMatch = text.match(/(?:Hemoglobin|Hb|Hgb).{0,10}(\d{1,2}[,\.]\d{1,2})/i);
-            if(hbMatch) setVal('f45', hbMatch[1].replace(',', '.'));
+            // ===== 5. TANI (Diagnosis) =====
+            let tani = getFromLines(['tanı', 'ön tanı', 'kesin tanı', 'sevk tanısı', 'teşhis']);
+            if (!tani) {
+                tani = findAfterLabel(['Tanı', 'Ön Tanı', 'Teşhis', 'Dg', 'Sevk Tanısı'], '[A-ZÇĞİÖŞÜa-zçğıöşü][A-ZÇĞİÖŞÜa-zçğıöşü\\s\\.\\,\\-\\(\\)]+');
+            }
+            if (tani) {
+                setVal('f18', tani); // Sevk tanısı yazıyla
+                setVal('f78', tani); // Son tanı da aynı olabilir
+            }
 
-            // pH
-            const phMatch = text.match(/(?:pH).{0,5}(\d{1}[,\.]\d{2})/);
-            if(phMatch) setVal('f46', phMatch[1].replace(',', '.'));
+            // ===== 6. ICD-10 KODU =====
+            let icd = findAfterLabel(['ICD', 'ICD-10', 'Tanı Kodu'], '[A-Z]\\d{2}(?:\\.\\d{1,2})?');
+            if (!icd) {
+                // Standalone ICD pattern
+                const icdMatch = text.match(/\b([A-Z]\d{2}(?:\.\d{1,2})?)\b/);
+                if (icdMatch) icd = icdMatch[1];
+            }
+            if (icd) {
+                setVal('f19', icd);
+                setVal('f79', icd);
+            }
 
-            // Laktat
-            const lacMatch = text.match(/(?:Laktat).{0,10}(\d{1,2}[,\.]\d{1,2})/i);
-            if(lacMatch) setVal('f70', lacMatch[1].replace(',', '.'));
+            // ===== 7. KAN BASINCI (TA) =====
+            // Pattern: 120/80 or TA: 120/80 or Sistolik: 120 Diyastolik: 80
+            const taPatterns = [
+                /(?:TA|Tansiyon|Kan\s*Basıncı|Arter[iy]el)\s*[:\-]?\s*(\d{2,3})\s*[\/\\]\s*(\d{2,3})/i,
+                /(?:Sistolik|SKB)\s*[:\-]?\s*(\d{2,3})\s*.*?(?:Diyastolik|DKB)\s*[:\-]?\s*(\d{2,3})/i,
+                /(\d{2,3})\s*\/\s*(\d{2,3})\s*(?:mmHg|mm\s*Hg)/i,
+            ];
+            for (const p of taPatterns) {
+                const m = text.match(p);
+                if (m) {
+                    const sys = parseInt(m[1]), dia = parseInt(m[2]);
+                    if (sys >= 50 && sys <= 300 && dia >= 20 && dia <= 200) {
+                        setVal('f35', String(sys));
+                        setVal('f36', String(dia));
+                        // Calculate MAP: (Sistolik + 2*Diyastolik) / 3
+                        const map = Math.round((sys + 2 * dia) / 3);
+                        setVal('f37', String(map));
+                        break;
+                    }
+                }
+            }
 
-            // ICD
-            const icdMatch = text.match(/(?:ICD|icd).{0,10}([A-Z]\d{2}(?:\.\d)?)/i);
-            if(icdMatch) setVal('f19', icdMatch[1]);
+            // ===== 8. SpO2 =====
+            const spo2Patterns = [
+                /(?:SpO2|SPO2|Spo2|Saturasyon|O2\s*Sat|SaO2)\s*[:\-]?\s*%?\s*(\d{2,3})\s*%?/i,
+            ];
+            for (const p of spo2Patterns) {
+                const m = text.match(p);
+                if (m && parseInt(m[1]) >= 50 && parseInt(m[1]) <= 100) {
+                    setVal('f38', m[1]);
+                    break;
+                }
+            }
 
-            // Tetkikler
-            if(/(?:BT|Tomografi)/i.test(text)) setVal('f25', '1');
-            if(/(?:MR|MRG)/i.test(text)) setVal('f13', '1');
-            if(/(?:USG|Ultrason)/i.test(text)) setVal('f26', '1');
-            if(/(?:Röntgen|Grafi|X-ray)/i.test(text)) setVal('f27', '1');
+            // ===== 9. NABIZ / KALP HIZI =====
+            const nabizPatterns = [
+                /(?:Nabız|Nab[ıi]z|Kalp\s*H[ıi]z[ıi]|KH|Pulse|HR)\s*[:\-]?\s*(\d{2,3})\s*(?:\/dk|\/min|dk|bpm)?/i,
+            ];
+            for (const p of nabizPatterns) {
+                const m = text.match(p);
+                if (m && parseInt(m[1]) >= 20 && parseInt(m[1]) <= 250) {
+                    setVal('f39', m[1]);
+                    break;
+                }
+            }
 
+            // ===== 10. SOLUNUM SAYISI =====
+            const ssPatterns = [
+                /(?:Solunum\s*(?:Say[ıi]s[ıi])?|SS|RR|Resp)\s*[:\-]?\s*(\d{1,2})\s*(?:\/dk|\/min)?/i,
+            ];
+            for (const p of ssPatterns) {
+                const m = text.match(p);
+                if (m && parseInt(m[1]) >= 6 && parseInt(m[1]) <= 60) {
+                    setVal('f40', m[1]);
+                    break;
+                }
+            }
+
+            // ===== 11. VÜCUT ISISI =====
+            const atesPatterns = [
+                /(?:Ateş|Is[ıi]|Vücut\s*[Iı]s[ıi]s[ıi]|Temp|T°)\s*[:\-]?\s*(\d{2}[\.,]\d{1})\s*°?C?/i,
+                /(?:Ateş|Is[ıi])\s*[:\-]?\s*(\d{2})\s*°?C/i,
+            ];
+            for (const p of atesPatterns) {
+                const m = text.match(p);
+                if (m) {
+                    const temp = parseFloat(m[1].replace(',', '.'));
+                    if (temp >= 34 && temp <= 42) {
+                        setVal('f41', m[1].replace(',', '.'));
+                        break;
+                    }
+                }
+            }
+
+            // ===== 12. GKS (Glasgow Koma Skoru) =====
+            const gksPatterns = [
+                /(?:GKS|GCS|Glasgow)\s*[:\-]?\s*(\d{1,2})(?:\s*\/\s*15)?/i,
+            ];
+            for (const p of gksPatterns) {
+                const m = text.match(p);
+                if (m && parseInt(m[1]) >= 3 && parseInt(m[1]) <= 15) {
+                    setVal('f43', m[1]);
+                    break;
+                }
+            }
+
+            // ===== 13. AVPU =====
+            if (/\b(?:Alert|Uyanık|Bilinç\s*(?:açık|Açık))\b/i.test(text)) setVal('f42', '1');
+            else if (/\b(?:Verbal|Sözel)\b/i.test(text)) setVal('f42', '2');
+            else if (/\b(?:Pain|Ağrı)\b/i.test(text)) setVal('f42', '3');
+            else if (/\b(?:Unresponsive|Yanıtsız|Bilinçsiz)\b/i.test(text)) setVal('f42', '4');
+
+            // ===== 14. HEMOGLOBİN =====
+            const hbPatterns = [
+                /(?:Hemoglobin|Hgb|Hb)\s*[:\-]?\s*(\d{1,2}[\.,]\d{1,2})\s*(?:g\/d[lL])?/i,
+                /(?:Hemoglobin|Hgb|Hb)\s*[:\-]?\s*(\d{1,2})\s*(?:g\/d[lL])/i,
+            ];
+            for (const p of hbPatterns) {
+                const m = text.match(p);
+                if (m) {
+                    const hb = parseFloat(m[1].replace(',', '.'));
+                    if (hb >= 3 && hb <= 25) {
+                        setVal('f45', m[1].replace(',', '.'));
+                        break;
+                    }
+                }
+            }
+
+            // ===== 15. KAN GAZI pH =====
+            const phPatterns = [
+                /(?:pH)\s*[:\-]?\s*(\d{1}[\.,]\d{2,3})/,
+            ];
+            for (const p of phPatterns) {
+                const m = text.match(p);
+                if (m) {
+                    const ph = parseFloat(m[1].replace(',', '.'));
+                    if (ph >= 6.5 && ph <= 8.0) {
+                        setVal('f46', m[1].replace(',', '.'));
+                        break;
+                    }
+                }
+            }
+
+            // ===== 16. LAKTAT =====
+            const lacPatterns = [
+                /(?:Laktat|Lactate)\s*[:\-]?\s*(\d{1,2}[\.,]\d{1,2})/i,
+            ];
+            for (const p of lacPatterns) {
+                const m = text.match(p);
+                if (m) {
+                    setVal('f70', m[1].replace(',', '.'));
+                    break;
+                }
+            }
+
+            // ===== 17. TETKİKLER (from text mentions) =====
+            if (/(?:BT\s|Tomografi|bilgisayarlı\s*tomografi)/i.test(text)) setVal('f25', '1');
+            if (/(?:USG|Ultrason|ultrasonografi)/i.test(text)) setVal('f26', '1');
+            if (/(?:Röntgen|Grafi|X[\-\s]?ray|X[\-\s]?Ray|direkt\s*grafi)/i.test(text)) setVal('f27', '1');
+            if (/(?:Laboratuvar|Lab\b|Tetkik|kan\s*tetkik)/i.test(text)) setVal('f28', '1');
+
+            // ===== 18. VENTİLASYON =====
+            if (/\b(?:entübe|Entübe|MV\b|mekanik\s*ventilat)/i.test(text)) setVal('f44', '3');
+            else if (/\b(?:NIMV|NIV|noninvaziv)/i.test(text)) setVal('f44', '2');
+            else if (/\b(?:O2|oksijen|nazal\s*kanül|maske)/i.test(text)) setVal('f44', '1');
+
+            // ===== 19. BÖLÜM/BİRİM BİLGİSİ =====
+            let bolum = getFromLines(['bölüm', 'birim', 'klinik', 'servis']);
+            if (bolum) {
+                const bolumLower = bolum.toLowerCase();
+                if (/acil/i.test(bolumLower)) { setVal('f10', '1'); }
+                else if (/yoğun\s*bakım|ybü|ybu/i.test(bolumLower)) { setVal('f10', '2'); }
+                else { setVal('f10', '3'); }
+            }
+
+            // ===== 20. KURUM BİLGİSİ =====
+            let kurum = getFromLines(['kurum', 'hastane', 'sağlık tesisi']);
+            if (kurum) {
+                // Try to determine basamak from kurum name
+                if (/üniversite|eğitim.*araştırma|şehir\s*hastanesi/i.test(kurum)) {
+                    setVal('f9', '3'); // 3. basamak
+                } else if (/devlet\s*hastanesi|ilçe/i.test(kurum)) {
+                    setVal('f9', '2'); // 2. basamak
+                } else if (/aile\s*sağlığı|ASM|sağlık\s*ocağı|1\.\s*basamak/i.test(kurum)) {
+                    setVal('f9', '1'); // 1. basamak
+                }
+            }
+
+            // ===== 21. TRANSFER BİLGİLERİ =====
+            if (/\bALS\b/.test(text)) setVal('f49', '1');
+            else if (/\bBLS\b/.test(text)) setVal('f49', '2');
+
+            if (/\b(?:helikopter|hava|hava\s*ambulansı)\b/i.test(text)) setVal('f50', '2');
+            else if (/\b(?:kara|ambulans)\b/i.test(text)) setVal('f50', '1');
+
+            if (/\b(?:paramedik)\b/i.test(text)) setVal('f51', '2');
+            else if (/\b(?:ATT)\b/.test(text)) setVal('f51', '1');
+            else if (/\b(?:doktor(?:lu)?)\b/i.test(text)) setVal('f51', '3');
+
+            // ===== 22. CPR / ENTÜBASYON =====
+            if (/\bCPR\b|kardiyopulmoner\s*resüsitasyon/i.test(text)) setVal('f55', '1');
+            if (/\bentübasyon\b|entübe\s*edildi/i.test(text)) setVal('f56', '1');
+
+            // ===== 23. MORTALİTE =====
+            if (/\b(?:ex(?:itus)?|ölüm|mortalite|vefat)\b/i.test(text)) {
+                setVal('f73', '1');
+                setVal('f74', '1');
+                setVal('f75', '4'); // Acil servis sonlanımı: mortalite
+            }
+
+            // ===== FINALIZE =====
             updateProgress();
             
             if(filledCount > 0) {
-                showToast(`${filledCount} alan otomatik dolduruldu!`);
-                // Expand accordions that have filled fields
+                showToast(`${filledCount} alan otomatik dolduruldu! Sarı alanları kontrol edin.`, 'success');
+                // Expand all accordions so user can review
                 document.querySelectorAll('.accordion-item').forEach(acc => acc.classList.add('active'));
             } else {
-                showToast('Otomatik eşleşme bulunamadı.', 'warning');
+                showToast('Otomatik eşleşme bulunamadı. Metin yapısı tanınmadı.', 'warning');
             }
         }
 
