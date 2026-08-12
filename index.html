@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sevk Verisi Giriş İstasyonu</title>
+<style>
+:root{
+  --bg:#F6F5F1;
+  --surface:#FFFFFF;
+  --border:#DEDBD2;
+  --ink:#1B2A2E;
+  --ink-soft:#5B6B6E;
+  --accent:#2F6E64;
+  --accent-soft:#E4EEEC;
+  --warm:#A85A3F;
+  --warm-soft:#F3E7E1;
+  --danger:#B34A3D;
+  --danger-soft:#F5E6E3;
+  --success:#3F7D5C;
+  --radius:10px;
+  --serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'SF Mono', ui-monospace, 'Consolas', 'Menlo', monospace;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+}
+header{
+  padding:22px 28px 16px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px;
+}
+header h1{ font-family:var(--serif); font-size:21px; font-weight:600; margin:0; letter-spacing:.2px; }
+header p{ margin:4px 0 0; color:var(--ink-soft); font-size:13px; max-width:520px; }
+.privacy-note{
+  font-size:12px; color:var(--accent); background:var(--accent-soft);
+  border:1px solid var(--accent); border-radius:999px; padding:7px 14px;
+  white-space:nowrap;
+}
+main{
+  display:grid; grid-template-columns: 1.1fr 0.9fr; gap:20px; padding:20px 28px;
+  align-items:start;
+}
+@media (max-width: 880px){ main{grid-template-columns:1fr;} }
+
+.panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
+.panel h2{
+  font-family:var(--serif); font-size:15px; margin:0 0 12px; color:var(--ink);
+  display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+}
+.case-badge{
+  font-family:var(--mono); font-size:11.5px; background:var(--warm-soft); color:var(--warm);
+  padding:4px 10px; border-radius:6px; border:1px solid var(--warm);
+}
+
+.dropzone{
+  display:block; border:1.5px dashed var(--border); border-radius:var(--radius); padding:20px;
+  text-align:center; color:var(--ink-soft); font-size:13px; cursor:pointer;
+  transition:border-color .15s, background .15s;
+}
+.dropzone.drag{ border-color:var(--accent); background:var(--accent-soft); }
+.dropzone input{ display:none; }
+
+.doc-tabs{ display:flex; gap:6px; flex-wrap:wrap; margin:14px 0 10px; }
+.doc-tab{
+  font-size:12px; padding:5px 10px; border-radius:6px; border:1px solid var(--border);
+  background:var(--bg); cursor:pointer; color:var(--ink-soft);
+}
+.doc-tab.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+.doc-tab .x{ margin-left:6px; opacity:.7; }
+
+.viewer{
+  border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fafaf8;
+  min-height:200px; display:flex; align-items:center; justify-content:center;
+}
+.viewer iframe{ width:100%; height:420px; border:0; }
+.viewer img{ max-width:100%; max-height:520px; display:block; margin:0 auto; }
+.viewer .empty{ color:var(--ink-soft); font-size:13px; padding:40px; }
+.viewer .docx-render{ padding:16px; max-height:420px; overflow:auto; font-size:13px; line-height:1.55; width:100%; }
+
+.extract-box{ margin-top:10px; border:1px solid var(--border); border-radius:8px; background:#fcfcfa; }
+.extract-box summary{ font-size:12px; color:var(--ink-soft); padding:8px 12px; cursor:pointer; }
+.extract-box pre{
+  margin:0; padding:12px; font-family:var(--mono); font-size:12px; white-space:pre-wrap;
+  max-height:220px; overflow:auto; border-top:1px solid var(--border); color:var(--ink);
+}
+
+.field-row{ display:flex; gap:6px; margin-bottom:8px; align-items:center; }
+.field-label-input{
+  flex:0 0 42%; font-size:12px; color:var(--ink-soft); font-family:var(--sans);
+  border:1px solid transparent; border-radius:6px; padding:7px 6px; background:transparent;
+}
+.field-label-input:focus{ outline:none; border-color:var(--accent); background:#fff; color:var(--ink); }
+.field-value-input{
+  flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
+  font-family:var(--mono); font-size:13px; color:var(--ink); background:#fff; min-width:0;
+}
+.field-value-input:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.rm-btn{ border:none; background:none; color:var(--ink-soft); cursor:pointer; font-size:15px; padding:4px 6px; flex:0 0 auto; }
+.rm-btn:hover{ color:var(--danger); }
+
+.add-field-btn{
+  font-size:12px; color:var(--accent); background:none; border:1px dashed var(--accent);
+  border-radius:6px; padding:6px 10px; cursor:pointer; margin-top:4px;
+}
+
+.actions{ display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+.btn{ font-size:13px; padding:9px 16px; border-radius:7px; border:1px solid transparent; cursor:pointer; font-weight:600; font-family:var(--sans); }
+.btn-primary{ background:var(--accent); color:#fff; }
+.btn-primary:hover{ background:#245a52; }
+.btn-secondary{ background:var(--surface); color:var(--ink); border-color:var(--border); }
+.btn-secondary:hover{ background:var(--bg); }
+
+.btn:focus, .doc-tab:focus, .add-field-btn:focus, .field-value-input:focus, input:focus{
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+
+.records-panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin:0 28px 28px; }
+.records-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+.records-head h2{ font-family:var(--serif); font-size:15px; margin:0; }
+.records-head-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+th,td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; max-width:170px; overflow:hidden; text-overflow:ellipsis; }
+th{ color:var(--ink-soft); font-weight:600; position:sticky; top:0; background:var(--surface); }
+tbody tr{ cursor:pointer; }
+tbody tr:hover{ background:var(--accent-soft); }
+.table-wrap{ overflow:auto; max-height:340px; border:1px solid var(--border); border-radius:8px; }
+.empty-state{ color:var(--ink-soft); font-size:13px; padding:24px; text-align:center; }
+.del-cell{ text-align:center; }
+.del-cell button{ border:none; background:none; color:var(--danger); cursor:pointer; font-size:12.5px; }
+
+.status-line{ font-size:12px; color:var(--ink-soft); margin-top:8px; min-height:16px; }
+.status-line.error{ color:var(--danger); }
+.status-line.ok{ color:var(--success); }
+footer{ padding:0 28px 28px; font-size:11px; color:var(--ink-soft); max-width:900px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Sevk Verisi Giriş İstasyonu</h1>
+    <p>Belgeyi yükle, oku, ilgili alanlara elle gir. Alanları kendi başlıklarına göre düzenleyebilirsin.</p>
+  </div>
+  <div class="privacy-note">🔒 Tamamen yerel — hiçbir dosya bu tarayıcıdan dışarı gönderilmez</div>
+</header>
+
+<main>
+  <section class="panel" id="doc-panel">
+    <h2>Belge <span class="case-badge" id="case-badge">Yeni hasta</span></h2>
+    <label class="dropzone" id="dropzone">
+      <div>PDF, JPEG, PNG ya da Word (.docx) dosyasını buraya sürükle<br>ya da tıklayıp seç — aynı hasta için birden fazla belge ekleyebilirsin</div>
+      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.docx" multiple>
+    </label>
+    <div class="doc-tabs" id="doc-tabs"></div>
+    <div class="viewer" id="viewer"><div class="empty">Henüz belge yüklenmedi</div></div>
+    <details class="extract-box" id="extract-box" style="display:none;">
+      <summary>Çıkarılan metin (seçip kopyalayabilirsin)</summary>
+      <pre id="extract-text"></pre>
+    </details>
+  </section>
+
+  <section class="panel" id="form-panel">
+    <h2>Veri Alanları</h2>
+    <div id="field-list"></div>
+    <button class="add-field-btn" id="add-field-btn" type="button">+ Alan ekle</button>
+    <div class="actions">
+      <button class="btn btn-primary" id="save-btn" type="button">Kaydet ve yeni hastaya geç</button>
+      <button class="btn btn-secondary" id="clear-btn" type="button">Temizle</button>
+    </div>
+    <div class="status-line" id="status-line"></div>
+  </section>
+</main>
+
+<section class="records-panel">
+  <div class="records-head">
+    <h2>Kaydedilen Hastalar (<span id="record-count">0</span>)</h2>
+    <div class="records-head-actions">
+      <button class="btn btn-secondary" id="reset-btn" type="button">Tüm kayıtları sıfırla</button>
+      <button class="btn btn-primary" id="export-btn" type="button">Excel'e aktar (.xlsx)</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="records-table">
+      <thead><tr id="table-head"></tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+  <div class="empty-state" id="table-empty">Henüz kayıt yok. Bir belge yükleyip alanları doldurduktan sonra "Kaydet"e bas. Bir satıra tıklayarak sonradan düzenleyebilirsin (ör. sevk sonrası verileri eklemek için).</div>
+</section>
+
+<footer>
+  Belgeler ve içindeki metin çıkarımı yalnızca bu tarayıcı sekmesinde işlenir, hiçbir sunucuya gönderilmez. Kaydettiğin alan değerleri de yalnızca bu cihazda (tarayıcı deposunda) tutulur — Excel'e aktarana kadar. Yüklediğin belgelerin kendisi hiçbir yerde saklanmaz, yalnızca sekme açıkken görüntülenir.
+</footer>
+
+<script type="module">
+  import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.min.mjs';
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.mjs';
+  } catch (e) { /* ignore, fallback handled elsewhere */ }
+  window.pdfjsLib = pdfjsLib;
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.11.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  var DEFAULT_FIELDS = [
+    { id: 'f_ad', label: 'Hasta Adı' },
+    { id: 'f_tc', label: 'TC Kimlik No' },
+    { id: 'f_yas', label: 'Yaş' },
+    { id: 'f_cinsiyet', label: 'Cinsiyet' },
+    { id: 'f_sist', label: 'Sistolik KB (sevk öncesi)' },
+    { id: 'f_diast', label: 'Diyastolik KB (sevk öncesi)' },
+    { id: 'f_spo2', label: 'SpO2 (sevk öncesi)' },
+    { id: 'f_nabiz', label: 'Nabız (sevk öncesi)' },
+    { id: 'f_gks', label: 'GKS (sevk öncesi)' },
+    { id: 'f_sonrasi_not', label: 'Sevk sonrası notu' }
+  ];
+
+  var state = {
+    fields: [],
+    records: [],
+    currentEntry: {},
+    currentDocs: [],
+    activeDocId: null,
+    editingId: null
+  };
+
+  function uid(prefix) {
+    return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function escapeHtml(s) {
+    if (s === undefined || s === null) return '';
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ---------- persistence ----------
+  async function loadState() {
+    try {
+      var f = await window.storage.get('fields');
+      state.fields = (f && f.value) ? JSON.parse(f.value) : DEFAULT_FIELDS.slice();
+    } catch (e) { state.fields = DEFAULT_FIELDS.slice(); }
+    if (!state.fields || !state.fields.length) state.fields = DEFAULT_FIELDS.slice();
+
+    try {
+      var r = await window.storage.get('records');
+      state.records = (r && r.value) ? JSON.parse(r.value) : [];
+    } catch (e) { state.records = []; }
+
+    resetCurrentEntry();
+    renderAll();
+  }
+
+  async function persistFields() {
+    try { await window.storage.set('fields', JSON.stringify(state.fields)); } catch (e) { /* non-fatal */ }
+  }
+  async function persistRecords() {
+    try { await window.storage.set('records', JSON.stringify(state.records)); } catch (e) { /* non-fatal */ }
+  }
+
+  function resetCurrentEntry() {
+    state.currentEntry = {};
+    state.fields.forEach(function (f) { state.currentEntry[f.id] = ''; });
+  }
+
+  // ---------- rendering ----------
+  function renderAll() {
+    renderCaseBadge();
+    renderFieldList();
+    renderDocTabs();
+    renderViewer();
+    renderTable();
+  }
+
+  function renderCaseBadge() {
+    var badge = document.getElementById('case-badge');
+    if (state.editingId) {
+      var idx = state.records.findIndex(function (r) { return r._id === state.editingId; });
+      badge.textContent = 'Düzenleniyor · kayıt #' + (idx + 1);
+    } else {
+      badge.textContent = 'Yeni hasta · sırada #' + (state.records.length + 1);
+    }
+  }
+
+  function renderFieldList() {
+    var list = document.getElementById('field-list');
+    list.innerHTML = '';
+    state.fields.forEach(function (f) {
+      var row = document.createElement('div');
+      row.className = 'field-row';
+
+      var labelInput = document.createElement('input');
+      labelInput.className = 'field-label-input';
+      labelInput.value = f.label;
+      labelInput.setAttribute('aria-label', 'Alan adı');
+      labelInput.addEventListener('change', function () {
+        f.label = labelInput.value || f.label;
+        persistFields();
+        renderTable();
+      });
+
+      var valueInput = document.createElement('input');
+      valueInput.className = 'field-value-input';
+      valueInput.type = 'text';
+      valueInput.value = state.currentEntry[f.id] || '';
+      valueInput.placeholder = '—';
+      valueInput.addEventListener('input', function () {
+        state.currentEntry[f.id] = valueInput.value;
+      });
+
+      var rm = document.createElement('button');
+      rm.className = 'rm-btn';
+      rm.type = 'button';
+      rm.textContent = '✕';
+      rm.title = 'Alanı sil';
+      rm.addEventListener('click', function () {
+        state.fields = state.fields.filter(function (x) { return x.id !== f.id; });
+        delete state.currentEntry[f.id];
+        persistFields();
+        renderFieldList();
+        renderTable();
+      });
+
+      row.appendChild(labelInput);
+      row.appendChild(valueInput);
+      row.appendChild(rm);
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('add-field-btn').addEventListener('click', function () {
+    var f = { id: uid('f'), label: 'Yeni alan' };
+    state.fields.push(f);
+    state.currentEntry[f.id] = '';
+    persistFields();
+    renderFieldList();
+    renderTable();
+  });
+
+  function renderDocTabs() {
+    var wrap = document.getElementById('doc-tabs');
+    wrap.innerHTML = '';
+    state.currentDocs.forEach(function (d) {
+      var tab = document.createElement('div');
+      tab.className = 'doc-tab' + (d.id === state.activeDocId ? ' active' : '');
+      tab.tabIndex = 0;
+      var shortName = d.name.length > 20 ? d.name.slice(0, 18) + '…' : d.name;
+      tab.innerHTML = escapeHtml(shortName) + ' <span class="x" data-role="close">✕</span>';
+      tab.addEventListener('click', function (e) {
+        if (e.target.getAttribute('data-role') === 'close') {
+          removeDoc(d.id);
+        } else {
+          state.activeDocId = d.id;
+          renderDocTabs();
+          renderViewer();
+        }
+      });
+      wrap.appendChild(tab);
+    });
+  }
+
+  function removeDoc(id) {
+    var d = state.currentDocs.find(function (x) { return x.id === id; });
+    if (d && d.objectUrl) { try { URL.revokeObjectURL(d.objectUrl); } catch (e) {} }
+    state.currentDocs = state.currentDocs.filter(function (x) { return x.id !== id; });
+    if (state.activeDocId === id) {
+      state.activeDocId = state.currentDocs.length ? state.currentDocs[0].id : null;
+    }
+    renderDocTabs();
+    renderViewer();
+  }
+
+  function renderViewer() {
+    var viewer = document.getElementById('viewer');
+    var extractBox = document.getElementById('extract-box');
+    var extractText = document.getElementById('extract-text');
+    var doc = state.currentDocs.find(function (x) { return x.id === state.activeDocId; });
+
+    if (!doc) {
+      viewer.innerHTML = '<div class="empty">Henüz belge yüklenmedi</div>';
+      extractBox.style.display = 'none';
+      return;
+    }
+
+    viewer.innerHTML = '';
+    if (doc.kind === 'pdf') {
+      var frame = document.createElement('iframe');
+      frame.src = doc.objectUrl;
+      frame.title = doc.name;
+      viewer.appendChild(frame);
+    } else if (doc.kind === 'image') {
+      var img = document.createElement('img');
+      img.src = doc.objectUrl;
+      img.alt = doc.name;
+      viewer.appendChild(img);
+    } else if (doc.kind === 'docx') {
+      var div = document.createElement('div');
+      div.className = 'docx-render';
+      div.innerHTML = doc.html || '<em>İşleniyor…</em>';
+      viewer.appendChild(div);
+    }
+
+    if (doc.extractedText && doc.extractedText.trim()) {
+      extractBox.style.display = '';
+      extractText.textContent = doc.extractedText;
+    } else if (doc.kind === 'pdf') {
+      extractBox.style.display = '';
+      extractText.textContent = doc.extracting
+        ? 'Metin çıkarılıyor…'
+        : '(Bu belgeden otomatik metin çıkarılamadı — muhtemelen taranmış görüntü. Yukarıdaki önizlemeden okuyabilirsin.)';
+    } else {
+      extractBox.style.display = 'none';
+    }
+  }
+
+  function renderTable() {
+    var head = document.getElementById('table-head');
+    var body = document.getElementById('table-body');
+    var empty = document.getElementById('table-empty');
+    var count = document.getElementById('record-count');
+    count.textContent = state.records.length;
+
+    head.innerHTML = '<th>#</th>' + state.fields.map(function (f) {
+      return '<th>' + escapeHtml(f.label) + '</th>';
+    }).join('') + '<th></th>';
+
+    if (!state.records.length) {
+      body.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+
+    body.innerHTML = '';
+    state.records.forEach(function (rec, idx) {
+      var tr = document.createElement('tr');
+      var cells = '<td>' + (idx + 1) + '</td>' + state.fields.map(function (f) {
+        return '<td>' + escapeHtml(rec[f.id]) + '</td>';
+      }).join('') + '<td class="del-cell"><button type="button" data-role="del">Sil</button></td>';
+      tr.innerHTML = cells;
+      tr.addEventListener('click', function (e) {
+        if (e.target.getAttribute('data-role') === 'del') {
+          deleteRecord(rec._id);
+          return;
+        }
+        editRecord(rec._id);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  function editRecord(id) {
+    var rec = state.records.find(function (r) { return r._id === id; });
+    if (!rec) return;
+    state.editingId = id;
+    resetCurrentEntry();
+    state.fields.forEach(function (f) { state.currentEntry[f.id] = rec[f.id] || ''; });
+    state.currentDocs = [];
+    state.activeDocId = null;
+    renderAll();
+    var panel = document.getElementById('form-panel');
+    if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function deleteRecord(id) {
+    state.records = state.records.filter(function (r) { return r._id !== id; });
+    if (state.editingId === id) {
+      state.editingId = null;
+      resetCurrentEntry();
+    }
+    persistRecords();
+    renderAll();
+    setStatus('Kayıt silindi.', false);
+  }
+
+  // ---------- file handling ----------
+  var dropzone = document.getElementById('dropzone');
+  var fileInput = document.getElementById('file-input');
+
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    dropzone.addEventListener(evt, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('drag');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (evt) {
+    dropzone.addEventListener(evt, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('drag');
+    });
+  });
+  dropzone.addEventListener('drop', function (e) {
+    if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', function (e) {
+    handleFiles(e.target.files);
+    fileInput.value = '';
+  });
+
+  function handleFiles(fileList) {
+    Array.prototype.forEach.call(fileList, function (file) { addDoc(file); });
+  }
+
+  function kindFor(file) {
+    var name = file.name.toLowerCase();
+    if (name.endsWith('.pdf') || file.type === 'application/pdf') return 'pdf';
+    if (name.endsWith('.docx')) return 'docx';
+    if (file.type.indexOf('image/') === 0 || /\.(jpe?g|png)$/.test(name)) return 'image';
+    return null;
+  }
+
+  function addDoc(file) {
+    var kind = kindFor(file);
+    if (!kind) {
+      setStatus('Desteklenmeyen dosya türü: ' + file.name, true);
+      return;
+    }
+    var id = uid('doc');
+    var objectUrl = URL.createObjectURL(file);
+    var doc = { id: id, name: file.name, kind: kind, objectUrl: objectUrl, extractedText: '', html: '', extracting: true };
+    state.currentDocs.push(doc);
+    state.activeDocId = id;
+    renderDocTabs();
+    renderViewer();
+
+    if (kind === 'pdf') {
+      extractPdfText(file, doc);
+    } else if (kind === 'docx') {
+      extractDocx(file, doc);
+    } else {
+      doc.extracting = false;
+    }
+  }
+
+  async function extractPdfText(file, doc) {
+    try {
+      if (!window.pdfjsLib) throw new Error('pdfjs unavailable');
+      var buf = await file.arrayBuffer();
+      var pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      var text = '';
+      var maxPages = Math.min(pdf.numPages, 15);
+      for (var i = 1; i <= maxPages; i++) {
+        var page = await pdf.getPage(i);
+        var content = await page.getTextContent();
+        var pageText = content.items.map(function (it) { return it.str; }).join(' ');
+        text += pageText + '\n\n';
+      }
+      doc.extractedText = text.trim();
+    } catch (e) {
+      doc.extractedText = '';
+    } finally {
+      doc.extracting = false;
+      if (doc.id === state.activeDocId) renderViewer();
+    }
+  }
+
+  async function extractDocx(file, doc) {
+    try {
+      if (!window.mammoth) throw new Error('mammoth unavailable');
+      var buf = await file.arrayBuffer();
+      var result = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+      doc.html = result.value;
+      var tmp = document.createElement('div');
+      tmp.innerHTML = result.value;
+      doc.extractedText = tmp.textContent || '';
+    } catch (e) {
+      doc.html = '<em>Belge önizlenemedi.</em>';
+      doc.extractedText = '';
+    } finally {
+      doc.extracting = false;
+      if (doc.id === state.activeDocId) renderViewer();
+    }
+  }
+
+  // ---------- save / clear ----------
+  document.getElementById('save-btn').addEventListener('click', async function () {
+    var hasValue = state.fields.some(function (f) { return (state.currentEntry[f.id] || '').trim() !== ''; });
+    if (!hasValue) {
+      setStatus('En az bir alanı doldurmadan kaydedilemez.', true);
+      return;
+    }
+    if (state.editingId) {
+      var rec = state.records.find(function (r) { return r._id === state.editingId; });
+      if (rec) state.fields.forEach(function (f) { rec[f.id] = state.currentEntry[f.id]; });
+      setStatus('Kayıt güncellendi.', false);
+    } else {
+      var newRec = { _id: uid('rec') };
+      state.fields.forEach(function (f) { newRec[f.id] = state.currentEntry[f.id]; });
+      state.records.push(newRec);
+      setStatus('Hasta kaydedildi.', false);
+    }
+    await persistRecords();
+    startNewPatient();
+  });
+
+  document.getElementById('clear-btn').addEventListener('click', function () {
+    startNewPatient();
+    setStatus('Form temizlendi.', false);
+  });
+
+  function startNewPatient() {
+    state.editingId = null;
+    resetCurrentEntry();
+    state.currentDocs.forEach(function (d) {
+      if (d.objectUrl) { try { URL.revokeObjectURL(d.objectUrl); } catch (e) {} }
+    });
+    state.currentDocs = [];
+    state.activeDocId = null;
+    renderAll();
+  }
+
+  function setStatus(msg, isError) {
+    var el = document.getElementById('status-line');
+    el.textContent = msg;
+    el.className = 'status-line ' + (isError ? 'error' : 'ok');
+    setTimeout(function () { el.textContent = ''; el.className = 'status-line'; }, 4000);
+  }
+
+  // ---------- export ----------
+  document.getElementById('export-btn').addEventListener('click', function () {
+    if (!state.records.length) {
+      setStatus('Aktarılacak kayıt yok.', true);
+      return;
+    }
+    try {
+      if (!window.XLSX) throw new Error('XLSX unavailable');
+      var header = state.fields.map(function (f) { return f.label; });
+      var rows = state.records.map(function (r) {
+        return state.fields.map(function (f) { return r[f.id] || ''; });
+      });
+      var aoa = [header].concat(rows);
+      var ws = window.XLSX.utils.aoa_to_sheet(aoa);
+      var wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Sevk Verisi');
+      var d = new Date();
+      var stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      window.XLSX.writeFile(wb, 'Sevk_Verisi_' + stamp + '.xlsx');
+      setStatus('Excel dosyası indirildi.', false);
+    } catch (e) {
+      setStatus('Excel oluşturulamadı. Sayfayı yenileyip tekrar dener misin?', true);
+    }
+  });
+
+  // ---------- reset all ----------
+  var resetBtn = document.getElementById('reset-btn');
+  var resetArmed = false;
+  var resetTimer = null;
+  resetBtn.addEventListener('click', function () {
+    if (!resetArmed) {
+      resetArmed = true;
+      resetBtn.textContent = 'Emin misin? Tekrar tıkla';
+      resetTimer = setTimeout(function () {
+        resetArmed = false;
+        resetBtn.textContent = 'Tüm kayıtları sıfırla';
+      }, 3000);
+    } else {
+      clearTimeout(resetTimer);
+      resetArmed = false;
+      resetBtn.textContent = 'Tüm kayıtları sıfırla';
+      state.records = [];
+      persistRecords();
+      startNewPatient();
+      setStatus('Tüm kayıtlar silindi.', false);
+    }
+  });
+
+  loadState();
+})();
+</script>
+</body>
+</html>
